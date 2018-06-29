@@ -12,7 +12,7 @@ var _ = Describe("redisBackend", func() {
 
 	BeforeEach(func() {
 		subject = newRedisBackend(&Options{
-			Addr:    "localhost:6379",
+			Addr:    "127.0.0.1:7481",
 			Network: "tcp",
 			Rise:    2})
 	})

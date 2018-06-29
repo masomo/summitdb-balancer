@@ -39,7 +39,7 @@ type Balancer struct {
 func New(opts []*Options, mode BalanceMode) *Balancer {
 	if len(opts) == 0 {
 		opts = []*Options{
-			&Options{Network: "tcp", Addr: "127.0.0.1:6379", MaxIdle: 1},
+			&Options{Network: "tcp", Addr: "127.0.0.1:7481", MaxIdle: 1},
 		}
 	}
 
