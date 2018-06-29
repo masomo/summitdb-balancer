@@ -18,6 +18,7 @@ type loadBalancer struct {
 	MaxIdle     int
 	Mode        string
 	HealthCheck bool
+	Routing     bool
 }
 
 type backend struct {

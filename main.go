@@ -16,7 +16,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 	metrics "github.com/rcrowley/go-metrics"
 	"github.com/semihalev/log"
-	balancer "github.com/semihalev/redis-balancer"
+	"github.com/semihalev/summitdb-balancer/balancer"
 	"github.com/tidwall/redcon"
 )
 
@@ -26,9 +26,9 @@ type SummitDBBalancer struct {
 }
 
 const (
-	balancerCommandMetricPrefix = "balancer.command"
-
-	version = "v0.1"
+	metricPrefix        = "sb"
+	checkLeaderInterval = 1
+	version             = "v0.1"
 )
 
 var (
@@ -56,7 +56,7 @@ func (sb *SummitDBBalancer) onRedisCommand(conn redcon.Conn, cmd redcon.Command)
 
 	sb.redisCommandNext(conn, cmd)
 
-	commandMetric := metrics.GetOrRegisterTimer(fmt.Sprintf("%s.%s", balancerCommandMetricPrefix, command), nil)
+	commandMetric := metrics.GetOrRegisterTimer(fmt.Sprintf("%s.command.%s", metricPrefix, command), nil)
 	commandMetric.UpdateSince(start)
 
 	redisMonitor(conn, cmd)
@@ -115,6 +115,10 @@ func (sb *SummitDBBalancer) redisCommandNext(conn redcon.Conn, cmd redcon.Comman
 		}
 
 		for _, val := range resp {
+			if val == nil {
+				conn.WriteNull()
+				continue
+			}
 			conn.WriteBulk(val.([]byte))
 		}
 	case "plset":
@@ -137,12 +141,15 @@ func (sb *SummitDBBalancer) onRedisClose(conn redcon.Conn, err error) {
 }
 
 func (sb *SummitDBBalancer) plget(cmd redcon.Command) ([]interface{}, error) {
-	pool := sb.balancer.Next()
+	backend := sb.balancer.Next()
 
 	cmd.Args[0] = []byte("MGET")
 
-	client := pool.Get()
+	client := backend.Pool.Get()
 	defer client.Close()
+
+	backendMetric := metrics.GetOrRegisterMeter(fmt.Sprintf("%s.backend.%s", metricPrefix, backend.Addr), nil)
+	backendMetric.Mark(1)
 
 	var args []interface{}
 	for _, arg := range cmd.Args[1:] {
@@ -166,12 +173,21 @@ func (sb *SummitDBBalancer) plget(cmd redcon.Command) ([]interface{}, error) {
 }
 
 func (sb *SummitDBBalancer) plset(cmd redcon.Command) error {
-	pool := sb.balancer.Next()
+	var backend *balancer.Backend
+
+	if config.LoadBalancer.Routing {
+		backend = sb.balancer.Leader()
+	} else {
+		backend = sb.balancer.Next()
+	}
 
 	cmd.Args[0] = []byte("MSET")
 
-	client := pool.Get()
+	client := backend.Pool.Get()
 	defer client.Close()
+
+	backendMetric := metrics.GetOrRegisterMeter(fmt.Sprintf("%s.backend.%s", metricPrefix, backend.Addr), nil)
+	backendMetric.Mark(1)
 
 	var args []interface{}
 	for _, arg := range cmd.Args[1:] {
@@ -196,10 +212,24 @@ func (sb *SummitDBBalancer) plset(cmd redcon.Command) error {
 
 // Do from redis
 func (sb *SummitDBBalancer) Do(conn redcon.Conn, cmd redcon.Command) {
-	pool := sb.balancer.Next()
+	var backend *balancer.Backend
 
-	client := pool.Get()
+	switch qcmdlower(cmd.Args[0]) {
+	case "set", "jset":
+		if config.LoadBalancer.Routing {
+			backend = sb.balancer.Leader()
+		} else {
+			backend = sb.balancer.Next()
+		}
+	default:
+		backend = sb.balancer.Next()
+	}
+
+	client := backend.Pool.Get()
 	defer client.Close()
+
+	backendMetric := metrics.GetOrRegisterMeter(fmt.Sprintf("%s.backend.%s", metricPrefix, backend.Addr), nil)
+	backendMetric.Mark(1)
 
 	var args []interface{}
 	for _, arg := range cmd.Args[1:] {
@@ -231,6 +261,12 @@ func (sb *SummitDBBalancer) Do(conn redcon.Conn, cmd redcon.Command) {
 	}
 }
 
+func (sb *SummitDBBalancer) checkLeader() {
+	for {
+		time.Sleep(checkLeaderInterval * time.Second)
+	}
+}
+
 func runBalancer() {
 	sb := new(SummitDBBalancer)
 
@@ -250,6 +286,10 @@ func runBalancer() {
 
 	sb.balancer = balancer.New(options, modeFromString(config.LoadBalancer.Mode))
 	defer sb.balancer.Close()
+
+	if config.LoadBalancer.Routing {
+		go sb.checkLeader()
+	}
 
 	err := redcon.ListenAndServe(*flagaddr, sb.onRedisCommand, sb.onRedisConnect, sb.onRedisClose)
 	if err != nil {
