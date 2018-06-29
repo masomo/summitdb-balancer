@@ -1,0 +1,19 @@
+########################## Load-Balance Modes ##########################
+# leastconn: picks the backend with the fewest connections.
+# firstup: always picks the first available backend.
+# minlatency: always picks the backend with the minimal latency.
+# random: selects backends randomly.
+# weightedlatency: uses latency as a weight for random selection.
+# roundrobin: round-robins across available backends.
+########################################################################
+
+loadbalancer:
+  mode: weightedlatency
+  maxidle: 256
+  healthcheck: on
+  upstream:
+    - {host: 127.0.0.1:6379, fall: 2, rise: 4, checkinterval: 250ms}
+    - {host: 127.0.0.1:6380, fall: 2, rise: 4, checkinterval: 250ms}
+    - {host: 127.0.0.1:6381, fall: 2, rise: 4, checkinterval: 250ms}
+    - {host: 127.0.0.1:6382, fall: 2, rise: 4, checkinterval: 250ms}
+
