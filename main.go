@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"net/http"
+	_ "net/http/pprof"
+
 	"github.com/gomodule/redigo/redis"
 	metrics "github.com/rcrowley/go-metrics"
 	"github.com/semihalev/log"
@@ -36,6 +39,7 @@ var (
 	flagLogLvl = flag.String("L", "info", "log verbosity level [crit,error,warn,info,debug]")
 	flagaddr   = flag.String("l", ":7781", "balancer listen addr")
 	flagconfig = flag.String("c", "sb.yaml", "config file path")
+	flagpprof  = flag.Bool("pprof", false, "Debug information on http port :6060")
 )
 
 var (
@@ -319,6 +323,15 @@ func main() {
 	}
 
 	go runBalancer()
+
+	if *flagpprof {
+		go func() {
+			err := http.ListenAndServe(":6060", nil)
+			if err != nil {
+				log.Error("http listener for pprof failed", "error", err.Error())
+			}
+		}()
+	}
 
 	log.Info("SummitDB balancer service started", "version", version, "addr", *flagaddr)
 
