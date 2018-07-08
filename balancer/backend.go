@@ -101,8 +101,8 @@ func (b *redisBackend) checkBackend() {
 
 	b.updateStatus(true)
 
-	if host, ok := reply.(string); ok {
-		if host == b.opt.Addr {
+	if host, ok := reply.([]byte); ok {
+		if string(host) == b.opt.Addr {
 			atomic.CompareAndSwapInt32(&b.leader, 0, 1)
 			return
 		}
