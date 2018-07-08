@@ -13,7 +13,7 @@ var _ = Describe("Balancer", func() {
 	var subject *Balancer
 
 	It("should initialize with defaults", func() {
-		subject = New([]*Options{}, ModeFirstUp)
+		subject = New([]*Options{}, false, ModeFirstUp)
 		defer subject.Close()
 
 		Expect(subject.selector).To(HaveLen(1))

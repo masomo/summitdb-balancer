@@ -33,10 +33,12 @@ type Balancer struct {
 	selector pool
 	mode     BalanceMode
 	cursor   int32
+
+	single, routing bool
 }
 
 // New initializes a new redis balancer
-func New(opts []*Options, mode BalanceMode) *Balancer {
+func New(opts []*Options, routing bool, mode BalanceMode) *Balancer {
 	if len(opts) == 0 {
 		opts = []*Options{
 			&Options{Network: "tcp", Addr: "127.0.0.1:7481", MaxIdle: 1},
@@ -46,6 +48,8 @@ func New(opts []*Options, mode BalanceMode) *Balancer {
 	balancer := &Balancer{
 		selector: make(pool, len(opts)),
 		mode:     mode,
+		single:   len(opts) == 1,
+		routing:  routing,
 	}
 	for i, opt := range opts {
 		if opt.MaxIdle == 0 {
@@ -68,10 +72,21 @@ func (b *Balancer) Leader() *Backend {
 		backend = b.selector.FirstUp()
 	}
 
+	// Fall back on random backend
+	if backend == nil {
+		backend = b.selector.Random()
+	}
+
 	// Increment the number of connections
 	backend.incConnections(1)
 
-	return &Backend{Addr: backend.Addr(), Pool: backend.client, Connections: backend.Connections(), Latency: backend.Latency(), Status: backend.Up()}
+	return &Backend{
+		Addr:        backend.Addr(),
+		Pool:        backend.client,
+		Connections: backend.Connections(),
+		Latency:     backend.Latency(),
+		Status:      backend.Up(),
+	}
 }
 
 // Close closes all connecitons in the balancer
@@ -88,6 +103,7 @@ func (b *Balancer) Close() (err error) {
 func (b *Balancer) pickNext() *Backend {
 	var backend *redisBackend
 
+next:
 	switch b.mode {
 	case ModeLeastConn:
 		backend = b.selector.MinUp(func(b *redisBackend) int64 {
@@ -114,12 +130,20 @@ func (b *Balancer) pickNext() *Backend {
 	// Fall back on random backend
 	if backend == nil {
 		backend = b.selector.Random()
+	} else if backend.Leader() && !b.single && b.routing {
+		goto next
 	}
 
 	// Increment the number of connections
 	backend.incConnections(1)
 
-	return &Backend{Addr: backend.Addr(), Pool: backend.client, Connections: backend.Connections(), Latency: backend.Latency(), Status: backend.Up()}
+	return &Backend{
+		Addr:        backend.Addr(),
+		Pool:        backend.client,
+		Connections: backend.Connections(),
+		Latency:     backend.Latency(),
+		Status:      backend.Up(),
+	}
 }
 
 // --------------------------------------------------------------------

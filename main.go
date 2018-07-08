@@ -29,9 +29,8 @@ type SummitDBBalancer struct {
 }
 
 const (
-	metricPrefix        = "sb"
-	checkLeaderInterval = 1
-	version             = "v0.1"
+	metricPrefix = "sb"
+	version      = "v0.1"
 )
 
 var (
@@ -219,7 +218,7 @@ func (sb *SummitDBBalancer) Do(conn redcon.Conn, cmd redcon.Command) {
 	var backend *balancer.Backend
 
 	switch qcmdlower(cmd.Args[0]) {
-	case "set", "jset":
+	case "set", "jset", "incr":
 		if config.LoadBalancer.Routing {
 			backend = sb.balancer.Leader()
 		} else {
@@ -265,12 +264,6 @@ func (sb *SummitDBBalancer) Do(conn redcon.Conn, cmd redcon.Command) {
 	}
 }
 
-func (sb *SummitDBBalancer) checkLeader() {
-	for {
-		time.Sleep(checkLeaderInterval * time.Second)
-	}
-}
-
 func runBalancer() {
 	sb := new(SummitDBBalancer)
 
@@ -288,12 +281,8 @@ func runBalancer() {
 		options = append(options, option)
 	}
 
-	sb.balancer = balancer.New(options, modeFromString(config.LoadBalancer.Mode))
+	sb.balancer = balancer.New(options, config.LoadBalancer.Routing, modeFromString(config.LoadBalancer.Mode))
 	defer sb.balancer.Close()
-
-	if config.LoadBalancer.Routing {
-		go sb.checkLeader()
-	}
 
 	err := redcon.ListenAndServe(*flagaddr, sb.onRedisCommand, sb.onRedisConnect, sb.onRedisClose)
 	if err != nil {
