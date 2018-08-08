@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gomodule/redigo/redis"
+	"github.com/semihalev/log"
 	"gopkg.in/tomb.v2"
 )
 
@@ -49,7 +50,7 @@ func newRedisBackend(opt *Options) *redisBackend {
 			},
 		},
 		opt: opt,
-		up:  1,
+		up:  0,
 
 		connections: 1e6,
 		latency:     int64(time.Minute),
@@ -89,26 +90,48 @@ func (b *redisBackend) checkBackend() {
 	conn := b.client.Get()
 	defer conn.Close()
 
-	reply, err := conn.Do("RAFTLEADER")
+	reply, err := conn.Do("RAFTSTATE")
 	if err != nil {
+		log.Error("Backend Down, check got error", "node", b.Addr(), "error", err.Error())
 		b.updateStatus(false)
 		atomic.CompareAndSwapInt32(&b.leader, 1, 0)
 		return
 	}
 
-	atomic.StoreInt64(&b.latency, int64(time.Now().Sub(start)))
-	atomic.StoreInt64(&b.connections, int64(b.client.ActiveCount()))
-
-	b.updateStatus(true)
-
-	if host, ok := reply.([]byte); ok {
-		if string(host) == b.opt.Addr {
+	if state, ok := reply.([]byte); ok {
+		switch string(state) {
+		case "Leader":
+			if !b.Leader() {
+				log.Info("Backend state changed", "node", b.Addr(), "state", string(state))
+			}
 			atomic.CompareAndSwapInt32(&b.leader, 0, 1)
+		case "Follower":
+			if b.Leader() {
+				log.Info("Backend state changed", "node", b.Addr(), "state", string(state))
+			}
+			atomic.CompareAndSwapInt32(&b.leader, 1, 0)
+		default:
+			atomic.CompareAndSwapInt32(&b.leader, 1, 0)
+			b.updateStatus(false)
+			log.Error("Backend Down, check state fault", "node", b.Addr(), "state", string(state))
 			return
 		}
+
+		if !b.Up() && int(atomic.AddInt32(&b.successes, 1)) == b.opt.getFall()-1 {
+			log.Info("Backend UP", "node", b.Addr(), "state", string(state))
+		}
+
+		atomic.StoreInt64(&b.latency, int64(time.Now().Sub(start)))
+		atomic.StoreInt64(&b.connections, int64(b.client.ActiveCount()))
+
+		b.updateStatus(true)
+
+		return
 	}
 
-	atomic.CompareAndSwapInt32(&b.leader, 1, 0)
+	log.Error("Backend Down, check reply type fault", "node", b.Addr())
+
+	b.updateStatus(false)
 }
 
 func (b *redisBackend) incConnections(n int64) {

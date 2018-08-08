@@ -15,4 +15,5 @@ loadbalancer:
   upstream:
     - {host: 127.0.0.1:7481, fall: 2, rise: 4, checkinterval: 250ms}
     - {host: 127.0.0.1:7482, fall: 2, rise: 4, checkinterval: 250ms}
+    - {host: 127.0.0.1:7483, fall: 2, rise: 4, checkinterval: 250ms}
     
