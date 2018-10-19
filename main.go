@@ -6,6 +6,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"reflect"
@@ -13,13 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"net/http"
-	_ "net/http/pprof"
-
 	"github.com/gomodule/redigo/redis"
+	"github.com/masomo/summitdb-balancer/balancer"
 	metrics "github.com/rcrowley/go-metrics"
 	"github.com/semihalev/log"
-	"github.com/semihalev/summitdb-balancer/balancer"
 	"github.com/tidwall/redcon"
 )
 

@@ -6,9 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/semihalev/summitdb-balancer/balancer"
-
 	"github.com/gomodule/redigo/redis"
+	"github.com/masomo/summitdb-balancer/balancer"
 	"github.com/tidwall/redcon"
 )
 
