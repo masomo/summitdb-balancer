@@ -66,7 +66,7 @@ func (p pool) WeightedRandom(weight func(*redisBackend) int64) *redisBackend {
 		return nil
 	}
 
-	var min, max int64 = math.MaxInt64, 0
+	var min, max int64 = math.MaxInt64, 1
 	weights := make([]int64, len(p))
 	for n, b := range p {
 		w := weight(b)
@@ -84,6 +84,10 @@ func (p pool) WeightedRandom(weight func(*redisBackend) int64) *redisBackend {
 		w = min + max - w
 		sum = sum + w
 		weights[n] = w
+	}
+
+	if sum <= 0 {
+		sum = 1
 	}
 
 	mark := rand.Int63n(sum)
